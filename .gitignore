@@ -14,8 +14,17 @@ tmp/
 *.egg-info
 *.eggs
 *.json
+!package.json
+!package-lock.json
 results/
 runs/
 data_sample/
 .pytest_cache
 data
+node_modules/
+outputs/
+.venv/
+
+# data lokal (jangan pernah di-commit)
+web/data/
+ui_preview.png

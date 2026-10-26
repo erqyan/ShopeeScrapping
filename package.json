@@ -1,0 +1,12 @@
+{
+  "name": "shopee-reviews-crawler-browser",
+  "private": true,
+  "type": "module",
+  "description": "Crawl ulasan Shopee lewat Playwright Firefox (melewati anti-bot)",
+  "scripts": {
+    "crawl": "node browser_crawl.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.56.0"
+  }
+}

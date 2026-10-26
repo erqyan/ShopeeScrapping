@@ -1,0 +1,501 @@
+{% from "_macros.html" import product_row %}
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shopee Reviews Crawler</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --line: #e3e6ea;
+    --text: #1c2126;
+    --muted: #6b7480;
+    --brand: #ee4d2d;
+    --brand-dark: #d73e20;
+    --ok: #17864b;
+    --ok-bg: #e6f6ec;
+    --warn: #a35a00;
+    --warn-bg: #fdf3e2;
+    --err: #b3261e;
+    --err-bg: #fdeceb;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    background: var(--card); border-bottom: 1px solid var(--line);
+    padding: 14px 24px; display: flex; align-items: center; gap: 16px;
+    position: sticky; top: 0; z-index: 10; flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  header h1 span { color: var(--brand); }
+  .spacer { flex: 1; }
+  main { max-width: 1180px; margin: 24px auto 60px; padding: 0 20px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px 20px;
+  }
+  .card h2 {
+    font-size: 14px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--muted); margin: 0 0 14px; font-weight: 650;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h2 .num {
+    background: var(--brand); color: #fff; width: 20px; height: 20px;
+    border-radius: 50%; font-size: 12px; display: grid; place-items: center;
+    flex: none;
+  }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  textarea, input[type=number], input[type=text] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; font: inherit; background: #fff; color: var(--text);
+  }
+  textarea { min-height: 96px; resize: vertical; }
+  textarea:focus, input:focus { outline: 2px solid #ffd9ce; border-color: var(--brand); }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  button {
+    font: inherit; font-weight: 600; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: #fff; color: var(--text);
+    padding: 10px 16px; transition: .15s;
+  }
+  button:hover:not(:disabled) { background: #f7f8f9; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button.primary {
+    background: var(--brand); border-color: var(--brand); color: #fff;
+  }
+  button.primary:hover:not(:disabled) { background: var(--brand-dark); }
+  button.ghost { padding: 6px 10px; font-size: 13px; }
+  button.danger { color: var(--err); border-color: #f2c9c6; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;
+    font-weight: 600; padding: 6px 12px; border-radius: 999px;
+    background: var(--err-bg); color: var(--err);
+  }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .products { margin-top: 16px; border-top: 1px solid var(--line); }
+  .product {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 11px 2px; border-bottom: 1px solid #f0f2f4;
+  }
+  .product:last-child { border-bottom: 0; }
+  .product input[type=checkbox] { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--brand); }
+  .product .meta { flex: 1; min-width: 0; }
+  .product .name {
+    font-weight: 600; font-size: 14px; overflow: hidden; min-width: 0;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .product .sub { color: var(--muted); font-size: 12.5px; }
+  .empty {
+    text-align: center; color: var(--muted); padding: 26px 10px;
+    font-size: 13.5px;
+  }
+  .bar { height: 8px; background: #eef0f2; border-radius: 999px; overflow: hidden; }
+  .bar > i {
+    display: block; height: 100%; width: 0;
+    background: linear-gradient(90deg, #ff7a5c, var(--brand));
+    transition: width .4s ease;
+  }
+  .progress-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; font-weight: 600; margin-bottom: 8px;
+  }
+  .items { margin-top: 14px; display: grid; gap: 9px; }
+  .item { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; }
+  .item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .s { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .item .bar { grid-column: 1 / -1; height: 5px; }
+  .log {
+    margin-top: 14px; background: #12161a; color: #c9d4dd; border-radius: 8px;
+    padding: 12px 14px; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-height: 220px; overflow: auto; white-space: pre-wrap;
+  }
+  .notice {
+    padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px;
+  }
+  .notice.err { background: var(--err-bg); color: var(--err); }
+  .notice.warn { background: var(--warn-bg); color: var(--warn); }
+  .notice.ok { background: var(--ok-bg); color: var(--ok); }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    background: #1c2126; color: #fff; padding: 11px 18px; border-radius: 8px;
+    font-size: 13.5px; opacity: 0; pointer-events: none; transition: .25s; z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .toast.err { background: var(--err); }
+  .hidden { display: none !important; }
+  .sep { height: 1px; background: var(--line); margin: 16px 0; }
+  .file-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=file] { font-size: 13px; max-width: 100%; }
+  .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 22px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Shopee <span>Reviews</span> Crawler</h1>
+  <div class="spacer"></div>
+  <div id="sessionPill" class="pill">
+    <span class="dot"></span><span id="sessionText">Memeriksa sesi…</span>
+  </div>
+</header>
+
+<main>
+  <div class="grid">
+    <!-- 1. Produk -->
+    <section class="card">
+      <h2><span class="num">1</span> Produk</h2>
+      <label for="urls">Tempel link produk Shopee</label>
+      <textarea id="urls" placeholder="https://shopee.co.id/Nama-Produk-i.809769142.22853217492&#10;satu link per baris…"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="primary" id="addBtn" style="flex:1">Tambah produk</button>
+        <button id="clearBtn" class="danger ghost">Hapus semua</button>
+      </div>
+      <div class="hint">Link tersimpan otomatis dan tetap ada setelah server di-restart.</div>
+
+      <div class="products" id="productList">
+        {% if not state.products %}
+        <div class="empty">Belum ada produk. Tambahkan link di atas.</div>
+        {% else %}
+          {% for p in state.products %}{{ product_row(p) }}{% endfor %}
+        {% endif %}
+      </div>
+      <div class="sep"></div>
+      <div class="actions">
+        <label style="margin:0;display:flex;gap:8px;align-items:center;font-weight:500">
+          <input type="checkbox" id="selectAll" style="accent-color:var(--brand)">
+          Pilih semua
+        </label>
+        <div class="spacer"></div>
+        <span class="hint" id="selectedInfo" style="margin:0">0 dipilih</span>
+      </div>
+    </section>
+
+    <!-- 2. Pengaturan -->
+    <section class="card">
+      <h2><span class="num">2</span> Pengaturan</h2>
+
+      <label for="maxReviews">Jumlah review per produk</label>
+      <input type="number" id="maxReviews" min="1" max="100000" step="50" value="{{ max_reviews }}">
+      <div class="hint">Batas rating yang diambil per produk. Rating tanpa teks ikut terhitung.</div>
+
+      <div style="margin-top:14px">
+        <label for="minLen">Panjang minimal komentar</label>
+        <input type="number" id="minLen" min="0" max="1000" step="1" value="{{ min_comment_len }}">
+        <div class="hint">0 = semua komentar. Rating tanpa komentar selalu dilewati.</div>
+      </div>
+
+      <div class="sep"></div>
+
+      <label>Sesi login Shopee</label>
+      <div id="sessionBox" class="notice {{ 'ok' if session.valid else 'warn' }}">
+        {{ session.message }}{% if session.exists %} Diperbarui {{ session.updated }}.{% endif %}
+      </div>
+      <div class="file-row">
+        <input type="file" id="cookieFile" accept=".txt,text/plain">
+        <button id="uploadBtn">Upload cookies.txt</button>
+      </div>
+      <div class="hint">
+        Ekspor cookie dari browser yang sudah login Shopee (ekstensi
+        “Get cookies.txt LOCALLY”), lalu upload di sini. Sesi disimpan di
+        <code>web/data/cookies.txt</code>.
+      </div>
+    </section>
+  </div>
+
+  <!-- 3. Jalankan -->
+  <section class="card" style="margin-top:18px">
+    <h2><span class="num">3</span> Jalankan scraping</h2>
+    <div class="actions">
+      <button class="primary" id="startBtn">Mulai scraping</button>
+      <span class="hint" style="margin:0" id="runInfo">Pilih produk lalu mulai.</span>
+    </div>
+  </section>
+
+  <!-- 4. Progres -->
+  <section class="card hidden" id="progressCard" style="margin-top:18px">
+    <h2><span class="num">4</span> Progres</h2>
+    <div class="notice warn hidden" id="jobError"></div>
+    <div class="progress-head">
+      <span id="jobStatus">Menyiapkan…</span>
+      <span id="jobPercent">0%</span>
+    </div>
+    <div class="bar"><i id="jobBar"></i></div>
+    <div class="items" id="jobItems"></div>
+    <div class="actions" style="margin-top:16px">
+      <button class="primary hidden" id="downloadBtn">Unduh CSV</button>
+      <span class="hint" style="margin:0" id="jobRows"></span>
+    </div>
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;color:var(--muted);font-size:13px">Lihat log</summary>
+      <div class="log" id="jobLog"></div>
+    </details>
+  </section>
+
+  <div class="footer">Berjalan lokal di 127.0.0.1 — cookie dan data tidak dikirim ke mana pun.</div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const nf = new Intl.NumberFormat('id-ID');
+
+function toast(msg, isError) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' err' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = 'toast'; }, 3200);
+}
+
+async function api(url, options = {}) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+/* ---------------- sesi ---------------- */
+async function refreshSession() {
+  try {
+    const s = await api('/api/session');
+    $('#sessionText').textContent = s.valid ? 'Sesi login aktif' : 'Sesi belum aktif';
+    $('#sessionPill').className = 'pill' + (s.valid ? ' ok' : '');
+    $('#sessionBox').className = 'notice ' + (s.valid ? 'ok' : 'warn');
+    $('#sessionBox').textContent = s.message + (s.exists && s.updated ? ' Diperbarui ' + s.updated + '.' : '');
+  } catch (e) {
+    $('#sessionText').textContent = 'Sesi tidak diketahui';
+  }
+}
+
+$('#uploadBtn').onclick = async () => {
+  const file = $('#cookieFile').files[0];
+  if (!file) return toast('Pilih file cookies.txt dulu.', true);
+  const body = new FormData();
+  body.append('cookies_file', file);
+  $('#uploadBtn').disabled = true;
+  try {
+    await api('/api/session', { method: 'POST', body });
+    toast('Sesi login tersimpan.');
+    refreshSession();
+  } catch (e) {
+    toast(e.message, true);
+    refreshSession();
+  } finally {
+    $('#uploadBtn').disabled = false;
+  }
+};
+
+/* ---------------- produk ---------------- */
+function renderProducts(products) {
+  const list = $('#productList');
+  const checked = new Set([...document.querySelectorAll('.pick:checked')].map((c) => c.dataset.id));
+  if (!products.length) {
+    list.innerHTML = '<div class="empty">Belum ada produk. Tambahkan link di atas.</div>';
+    updateSelected();
+    return;
+  }
+  list.innerHTML = products.map((p) => `
+    <div class="product" data-id="${p.id}">
+      <input type="checkbox" class="pick" data-id="${p.id}">
+      <div class="meta">
+        <div class="name">${escapeHtml(p.name || ('Produk ' + p.itemid))}</div>
+        <div class="sub">item ${p.itemid} · shop ${p.shopid}${
+          p.last_crawled ? ' · terakhir ' + nf.format(p.last_rows || 0) + ' baris' : ''
+        }</div>
+      </div>
+      <button class="ghost danger del" data-id="${p.id}">Hapus</button>
+    </div>`).join('');
+  list.querySelectorAll('.pick').forEach((c) => {
+    if (checked.has(c.dataset.id)) c.checked = true;
+    c.addEventListener('change', updateSelected);
+  });
+  list.querySelectorAll('.del').forEach((b) => b.addEventListener('click', async () => {
+    await api('/api/products/' + b.dataset.id, { method: 'DELETE' });
+    loadProducts();
+  }));
+  updateSelected();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function loadProducts() {
+  renderProducts(await api('/api/products'));
+}
+
+$('#addBtn').onclick = async () => {
+  const text = $('#urls').value.trim();
+  if (!text) return toast('Tempel minimal satu link.', true);
+  $('#addBtn').disabled = true;
+  try {
+    const res = await api('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls: text }),
+    });
+    const parts = [];
+    if (res.added.length) parts.push(res.added.length + ' ditambahkan');
+    if (res.skipped.length) parts.push(res.skipped.length + ' sudah ada');
+    if (res.invalid.length) parts.push(res.invalid.length + ' tidak valid');
+    toast(parts.join(', ') || 'Tidak ada perubahan.', res.invalid.length > 0);
+    $('#urls').value = '';
+    renderProducts(res.products);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    $('#addBtn').disabled = false;
+  }
+};
+
+$('#clearBtn').onclick = async () => {
+  if (!confirm('Hapus semua produk dari daftar?')) return;
+  await api('/api/products/clear', { method: 'POST' });
+  loadProducts();
+};
+
+$('#selectAll').onchange = (e) => {
+  document.querySelectorAll('.pick').forEach((c) => { c.checked = e.target.checked; });
+  updateSelected();
+};
+
+function updateSelected() {
+  const picked = document.querySelectorAll('.pick:checked').length;
+  const total = document.querySelectorAll('.pick').length;
+  $('#selectedInfo').textContent = picked + ' dipilih';
+  $('#runInfo').textContent = picked
+    ? picked + ' produk siap di-scrape.'
+    : (total ? 'Pilih produk, atau centang “Pilih semua”.' : 'Tambahkan produk dulu.');
+  $('#startBtn').disabled = picked === 0;
+  if (picked !== total) $('#selectAll').checked = false;
+}
+
+/* ---------------- pengaturan ---------------- */
+function settingsPayload() {
+  return {
+    max_reviews: Number($('#maxReviews').value) || 500,
+    min_comment_len: Number($('#minLen').value) || 0,
+  };
+}
+
+let saveTimer;
+['#maxReviews', '#minLen'].forEach((sel) => {
+  $(sel).addEventListener('input', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      api('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingsPayload()),
+      }).catch(() => {});
+    }, 500);
+  });
+});
+
+/* ---------------- job ---------------- */
+let currentJob = null;
+let pollTimer = null;
+
+$('#startBtn').onclick = async () => {
+  const ids = [...document.querySelectorAll('.pick:checked')].map((c) => c.dataset.id);
+  if (!ids.length) return toast('Pilih minimal satu produk.', true);
+  $('#startBtn').disabled = true;
+  try {
+    const res = await api('/api/crawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_ids: ids, ...settingsPayload() }),
+    });
+    currentJob = res.job_id;
+    localStorage.setItem('lastJob', currentJob);
+    showProgress();
+    pollJob();
+  } catch (e) {
+    toast(e.message, true);
+    $('#startBtn').disabled = false;
+  }
+};
+
+function showProgress() {
+  $('#progressCard').classList.remove('hidden');
+  $('#jobError').classList.add('hidden');
+  $('#downloadBtn').classList.add('hidden');
+  $('#jobItems').innerHTML = '';
+  $('#jobLog').textContent = '';
+  $('#jobStatus').textContent = 'Menyiapkan…';
+  $('#jobPercent').textContent = '0%';
+  $('#jobBar').style.width = '0%';
+  $('#jobRows').textContent = '';
+}
+
+async function pollJob() {
+  clearTimeout(pollTimer);
+  if (!currentJob) return;
+  try {
+    const j = await api('/api/jobs/' + currentJob);
+    $('#jobPercent').textContent = j.progress + '%';
+    $('#jobBar').style.width = j.progress + '%';
+    const finished = j.products.filter((p) => p.target && p.done >= p.target).length;
+    $('#jobStatus').textContent = j.status === 'selesai'
+      ? 'Selesai — ' + nf.format(j.rows) + ' baris'
+      : j.status === 'gagal'
+        ? 'Gagal'
+        : 'Mengambil ulasan… ' + finished + '/' + j.total_products + ' produk';
+    $('#jobLog').textContent = j.log.join('\n');
+    $('#jobLog').scrollTop = $('#jobLog').scrollHeight;
+    $('#jobItems').innerHTML = j.products.map((p) => {
+      const target = p.target || p.total || 0;
+      const pct = target ? Math.min(100, Math.round(p.done * 100 / target)) : 0;
+      const label = p.state === 'diblokir'
+        ? 'diblokir'
+        : (target ? nf.format(p.done) + ' / ' + nf.format(target) + (pct >= 100 ? ' ✓' : '') : '…');
+      return `<div class="item">
+        <span class="t">item ${p.itemid}</span>
+        <span class="s">${label}</span>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+      </div>`;
+    }).join('');
+
+    if (j.status === 'selesai') {
+      $('#downloadBtn').classList.remove('hidden');
+      $('#downloadBtn').onclick = () => { window.location = '/api/jobs/' + currentJob + '/download'; };
+      $('#jobRows').textContent = nf.format(j.rows) + ' ulasan siap diunduh.';
+      $('#startBtn').disabled = false;
+      loadProducts();
+      localStorage.removeItem('lastJob');
+      return;
+    }
+    if (j.status === 'gagal') {
+      $('#jobError').classList.remove('hidden');
+      $('#jobError').textContent = j.error || 'Scraping gagal.';
+      $('#startBtn').disabled = false;
+      localStorage.removeItem('lastJob');
+      return;
+    }
+    pollTimer = setTimeout(pollJob, 1200);
+  } catch (e) {
+    pollTimer = setTimeout(pollJob, 3000);
+  }
+}
+
+/* pulihkan job terakhir kalau halaman di-refresh saat scraping */
+const savedJob = localStorage.getItem('lastJob');
+if (savedJob) { currentJob = savedJob; showProgress(); pollJob(); }
+
+refreshSession();
+setInterval(refreshSession, 60000);
+loadProducts();
+</script>
+</body>
+</html>

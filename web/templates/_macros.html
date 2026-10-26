@@ -1,0 +1,10 @@
+{% macro product_row(p) %}
+<div class="product" data-id="{{ p.id }}">
+  <input type="checkbox" class="pick" data-id="{{ p.id }}">
+  <div class="meta">
+    <div class="name">{{ p.name or ('Produk ' ~ p.itemid) }}</div>
+    <div class="sub">item {{ p.itemid }} · shop {{ p.shopid }}{% if p.last_crawled %} · terakhir {{ p.last_rows or 0 }} baris{% endif %}</div>
+  </div>
+  <button class="ghost danger del" data-id="{{ p.id }}">Hapus</button>
+</div>
+{% endmacro %}

@@ -1,0 +1,3 @@
+# Opsional. Hanya dibutuhkan crawler.utils.read_csv() (membaca CSV/TSV).
+# Tidak dipakai oleh web UI maupun alur crawl biasa.
+pandas>=2.0,<3

@@ -1,0 +1,10 @@
+# Dependensi inti Shopee Reviews Crawler (web UI + CLI + importer CSV).
+# Python 3.9+ (disarankan 3.11/3.12). Semua paket punya wheel untuk Windows.
+#
+#   Windows      : .venv\Scripts\pip install -r requirements.txt
+#   Linux/macOS  : .venv/bin/pip install -r requirements.txt
+
+Flask>=3.0,<4
+requests>=2.31,<3
+PyYAML>=6.0,<7
+tqdm>=4.66,<5
