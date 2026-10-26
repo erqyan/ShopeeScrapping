@@ -35,6 +35,7 @@ const OUT = arg('out', 'raw_reviews.json');
 const MAX_REVIEWS = Number(arg('max', 500));
 const HEADFUL = process.argv.includes('--headful');
 const CHECK_ONLY = process.argv.includes('--check');
+const DIAGNOSE = process.argv.includes('--diagnose');
 const FLAGS = ['--cookies', '--out', '--max'];
 const urls = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && !FLAGS.includes(all[i - 1]));
 
@@ -117,6 +118,178 @@ async function openBrowser() {
   }
 }
 
+function maskValue(v) {
+  const s = String(v || '');
+  return s.length <= 6 ? '(pendek)' : s.slice(0, 4) + '…' + s.slice(-2);
+}
+
+function maskIp(ip) {
+  if (!ip) return '(tidak diketahui)';
+  if (ip.includes(':')) return ip.split(':').slice(0, 4).join(':') + '::…';
+  const p = ip.split('.');
+  return p.length === 4 ? `${p[0]}.${p[1]}.x.x` : ip;
+}
+
+async function diagnose() {
+  const { shopid, itemid } = parseRef(urls[0]);
+  const out = (...a) => console.log(...a);
+  out('== Diagnosa sesi Shopee ==');
+  out('Sistem        : ' + process.platform + ' ' + process.arch + ' | Node ' + process.version);
+  out('Mode browser  : ' + (HEADFUL ? 'tampil (headful)' : 'tersembunyi (headless)'));
+  out('Produk uji    : ' + shopid + '.' + itemid);
+
+  const cookies = loadCookies(COOKIE_FILE);
+  const names = cookies.map((c) => c.name);
+  const keys = ['SPC_U', 'SPC_F', 'SPC_SI', 'SPC_T', 'csrftoken', 'SPC_CDS'];
+  out('Cookie        : ' + cookies.length + ' butir | ' + keys.filter((k) => names.includes(k)).join(', '));
+  const spcU = cookies.find((c) => c.name === 'SPC_U');
+  if (spcU) out('  SPC_U       : ' + maskValue(spcU.value));
+  const exps = cookies.map((c) => Number(c.expires)).filter((n) => n > 0);
+  if (exps.length) {
+    out('  berlaku s/d : ' + new Date(Math.max(...exps) * 1000).toISOString().slice(0, 10));
+  }
+
+  let ctx;
+  try {
+    ctx = await openBrowser();
+    await ctx.addCookies(cookies);
+    const page = ctx.pages()[0] || (await ctx.newPage());
+    page.setDefaultTimeout(60000);
+
+    let pdp = null;
+    let pageRatingsOk = false;
+    let pageRatingsError = null;
+    let httpStatus = null;
+    let serverDate = null;
+    page.on('response', async (r) => {
+      const u = r.url();
+      if (r.request().resourceType() === 'document' && u.includes('/product/')) {
+        httpStatus = r.status();
+        serverDate = r.headers()['date'] || null;
+      }
+      if (u.includes('pdp/get_pc')) {
+        try { pdp = await r.json(); } catch { /* abaikan */ }
+      } else if (u.includes('/get_ratings')) {
+        try {
+          const j = await r.json();
+          if (j && j.error) pageRatingsError = j.error;
+          else pageRatingsOk = true;
+        } catch { /* abaikan */ }
+      }
+    });
+
+    await page.goto(`https://shopee.co.id/product/${shopid}/${itemid}`,
+      { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    const start = Date.now();
+    let patched = false;
+    while (Date.now() - start < 30000) {
+      if (pdp || pageRatingsOk || pageRatingsError) break;
+      if (!patched) {
+        try {
+          patched = await page.evaluate(() => {
+            try { return !window.fetch.toString().includes('[native code]'); } catch { return false; }
+          });
+        } catch { patched = false; }
+      }
+      if (patched && Date.now() - start > 8000) break;
+      await sleep(500);
+    }
+
+    const ua = await page.evaluate(() => navigator.userAgent).catch(() => '?');
+    const shownUrl = page.url().replace(/[?#].*$/, '');
+    out('');
+    out('URL akhir     : ' + shownUrl);
+    out('Judul         : ' + ((await page.title().catch(() => '')) || '').slice(0, 90));
+    out('Status HTTP   : ' + (httpStatus ?? '?'));
+    out('SDK anti-bot  : ' + (patched ? 'aktif (fetch ditandatangani)' : 'TIDAK aktif'));
+    out('Data produk   : ' + (pdp ? 'termuat' : 'tidak termuat'));
+    out('Rating halaman: ' + (pageRatingsOk ? 'ya'
+      : pageRatingsError ? 'DITOLAK error ' + pageRatingsError : 'tidak ada request'));
+    out('User-Agent    : ' + String(ua).slice(0, 110));
+
+    if (serverDate) {
+      const skew = Math.round((Date.now() - Date.parse(serverDate)) / 1000);
+      out('Selisih jam   : ' + skew + ' detik'
+        + (Math.abs(skew) > 120 ? '  <-- jam sistem tidak akurat' : ''));
+    }
+
+    let account = null;
+    try {
+      account = await page.evaluate(async () => {
+        const r = await fetch('/api/v4/account/basic/get_account_info', { credentials: 'include' });
+        const j = await r.json().catch(() => null);
+        const d = (j && j.data) || {};
+        return { status: r.status, error: j && j.error, userid: d.userid ?? null, username: d.username ?? null };
+      });
+      if (account && account.userid) {
+        out('Akun login    : ' + account.userid + (account.username ? ' (' + account.username + ')' : ''));
+      } else {
+        out('Akun login    : TIDAK terdeteksi (error ' + (account?.error ?? '?') + ')');
+      }
+    } catch (e) {
+      out('Akun login    : gagal dicek (' + (e?.message || e) + ')');
+    }
+
+    let ip = null;
+    try {
+      const p2 = await ctx.newPage();
+      await p2.goto('https://api64.ipify.org?format=json', { timeout: 20000 });
+      const body = await p2.locator('body').innerText();
+      ip = JSON.parse(body).ip;
+      await p2.close();
+    } catch { /* jaringan membatasi cek IP */ }
+    out('IP publik     : ' + maskIp(ip) + (ip && ip.includes(':') ? ' (IPv6)' : ''));
+
+    const test = await page.evaluate(async ({ shopid, itemid }) => {
+      const r = await fetch(`/api/v2/item/get_ratings?filter=0&flag=1&itemid=${itemid}&limit=1&offset=0&shopid=${shopid}&type=0`, { credentials: 'include' });
+      const j = await r.json().catch(() => null);
+      return { status: r.status, error: j && j.error, total: j?.data?.item_rating_count ?? null };
+    }, { shopid, itemid }).catch((e) => ({ status: 0, error: 'ERR ' + e.message }));
+
+    out('Uji get_ratings: ' + (test.error
+      ? 'GAGAL (HTTP ' + test.status + ', error ' + test.error + ')'
+      : 'BERHASIL (total ' + (test.total ?? '?') + ')'));
+    const nowUrl = page.url().replace(/[?#].*$/, '');
+    if (nowUrl !== shownUrl) {
+      out('URL sekarang  : ' + nowUrl + '  <-- halaman dialihkan');
+    }
+    out('');
+
+    const verdict = [];
+    if (page.url().includes('/verify/traffic')) {
+      verdict.push('Halaman dialihkan ke /verify/traffic: IP/akun sedang diverifikasi Shopee.');
+    }
+    if (test.error === 90309999) {
+      verdict.push('Request API ditolak 90309999 meski halaman terbuka.');
+    }
+    if (pdp && pageRatingsOk && !test.error) {
+      verdict.push('Sesi ini SEHAT: halaman dan API sama-sama berhasil.');
+    }
+    if (!patched) {
+      verdict.push('SDK anti-bot tidak aktif: halaman tidak selesai dimuat / diblokir.');
+    }
+    if (serverDate) {
+      const skew = Math.round((Date.now() - Date.parse(serverDate)) / 1000);
+      if (Math.abs(skew) > 120) {
+        verdict.push('Jam sistem meleset ' + skew + ' detik. Aktifkan "Set time automatically" di Windows, restart, lalu coba lagi.');
+      }
+    }
+    if (account && !account.userid) {
+      verdict.push('Cookie tidak membawa sesi login yang sah. Ekspor ulang cookies.txt dari Chrome yang benar-benar login.');
+    }
+    if (!verdict.length) verdict.push('Tidak ada masalah yang terdeteksi dari uji ini.');
+    out('KESIMPULAN:');
+    verdict.forEach((v) => out('  - ' + v));
+    out('');
+    out('Kalau Ubuntu berhasil dengan akun yang sama, bandingkan: akun login, IP publik,');
+    out('selisih jam, dan apakah Windows memakai VPN/proxy. Coba juga centang');
+    out('"Tampilkan browser saat crawling".');
+  } finally {
+    if (ctx) await ctx.close().catch(() => {});
+  }
+}
+
 async function main() {
   if (CHECK_ONLY) {
     console.log('Node.js         : ' + process.version);
@@ -137,6 +310,15 @@ async function main() {
       }
     }
     if (!existsSync(exe)) process.exitCode = 1;
+    return;
+  }
+
+  if (DIAGNOSE) {
+    if (!COOKIE_FILE || !urls.length) {
+      console.error('Pakai: node browser_crawl.mjs --cookies FILE --diagnose URL');
+      process.exit(1);
+    }
+    await diagnose();
     return;
   }
 

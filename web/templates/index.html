@@ -214,10 +214,15 @@
         <button id="uploadBtn">Upload cookies.txt</button>
       </div>
       <div class="hint">
-        Ekspor cookie dari browser yang sudah login Shopee (ekstensi
-        “Get cookies.txt LOCALLY”), lalu upload di sini. Sesi disimpan di
-        <code>web/data/cookies.txt</code>.
+        Ekspor cookie dengan ekstensi “Get cookies.txt LOCALLY” dari browser yang
+        sudah login (pastikan nama akun muncul di pojok kanan atas Shopee), lalu
+        upload di sini. Sesi disimpan di <code>web/data/cookies.txt</code>.
       </div>
+      <div class="actions" style="margin-top:10px">
+        <button id="diagBtn">Cek sesi ke Shopee</button>
+        <span class="hint" style="margin:0" id="diagStatus"></span>
+      </div>
+      <pre class="log hidden" id="diagOut" style="margin-top:10px;max-height:320px"></pre>
     </section>
   </div>
 
@@ -302,6 +307,35 @@ $('#uploadBtn').onclick = async () => {
     refreshSession();
   } finally {
     $('#uploadBtn').disabled = false;
+  }
+};
+
+$('#diagBtn').onclick = async () => {
+  const btn = $('#diagBtn');
+  const out = $('#diagOut');
+  const status = $('#diagStatus');
+  const picked = document.querySelector('.pick:checked');
+  btn.disabled = true;
+  status.textContent = 'Memeriksa… ±30 detik, jangan tutup halaman ini.';
+  out.classList.add('hidden');
+  try {
+    const res = await api('/api/session/diagnose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product_id: picked ? picked.dataset.id : null,
+        headful: $('#headful').checked,
+      }),
+    });
+    out.textContent = res.output;
+    out.classList.remove('hidden');
+    status.textContent = res.ok ? '' : 'Diagnosa menemukan masalah — lihat hasil di bawah.';
+  } catch (e) {
+    status.textContent = '';
+    out.textContent = 'Gagal: ' + e.message;
+    out.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
   }
 };
 

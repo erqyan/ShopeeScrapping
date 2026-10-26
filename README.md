@@ -244,6 +244,24 @@ browser (atau centang **Tampilkan browser saat crawling** di web UI).
 Kalau semua produk tetap ditolak, job di web UI berstatus **Gagal** dengan
 petunjuk — bukan "selesai 0 baris" — supaya penyebabnya jelas.
 
+### Cek sesi (Windows vs Ubuntu)
+
+Klik **Cek sesi ke Shopee** di kartu "Sesi login Shopee", atau jalankan:
+
+```bash
+node browser_crawl.mjs --cookies web/data/cookies.txt --diagnose 809769142.22853217492
+```
+
+Laporan menampilkan akun yang benar-benar login, IP publik, selisih jam sistem,
+status SDK anti-bot, dan hasil uji `get_ratings`. Tiga penyebab yang bisa
+dibedakan:
+
+| Temuan di laporan | Arti | Solusi |
+| --- | --- | --- |
+| `Akun login: TIDAK terdeteksi` | cookies.txt bukan sesi login (halaman produk tetap bisa tampil tanpa login) | ekspor ulang dari Chrome yang benar-benar login, upload ulang |
+| `Selisih jam: > 120 detik` | jam Windows tidak akurat sehingga tanda tangan ditolak | aktifkan **Set time automatically**, restart, ulangi |
+| Akun & jam benar, `IP publik` beda dari Ubuntu, tetap `90309999`/verify | IP/VPN/proxy Windows berbeda dan sedang dicurigai Shopee | matikan VPN/proxy, coba hotspot lain, atau tunggu beberapa jam |
+
 ## Output
 
 CSV (UTF-8) dengan kolom:
@@ -271,6 +289,7 @@ Semua folder `web/data/` dan `outputs/` masuk `.gitignore`.
 | --- | --- | --- |
 | `Sesi belum aktif` atau `error 90309999` | cookie kedaluwarsa / bukan akun login / SDK halaman belum siap | ekspor ulang `cookies.txt` dari browser yang sudah login, upload lagi; kalau baru crawling banyak, tunggu beberapa jam |
 | `error 90309999` padahal cookie baru | Shopee menolak mode headless | centang **Tampilkan browser saat crawling** di Pengaturan, lalu ulangi; atau `set HEADFUL=1` sebelum `run_web.bat` |
+| `error 90309999` hanya di Windows | bisa cookie bukan sesi login, jam meleset, atau VPN/proxy | klik **Cek sesi ke Shopee**; bandingkan akun, IP publik, dan selisih jam dengan Ubuntu |
 | Halaman produk dialihkan ke `/verify/traffic/error` | IP diblokir sementara | tunggu beberapa jam, ganti jaringan, pastikan cookie login valid |
 | `Node.js belum terpasang` | Node tidak ada di PATH | install Node.js LTS, buka terminal/CMD baru |
 | `Dependensi Node belum ada` | `npm install` belum dijalankan | `npm install` di folder proyek |

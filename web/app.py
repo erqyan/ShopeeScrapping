@@ -442,6 +442,43 @@ def api_session():
     return jsonify(session_info())
 
 
+@app.post('/api/session/diagnose')
+def api_session_diagnose():
+    """Buka satu produk dengan browser lalu laporkan kondisi sesi apa adanya."""
+    payload = request.get_json(silent=True) or {}
+    state = load_state()
+    products = state['products']
+    if not products:
+        return jsonify({'error': 'Tambahkan minimal satu produk untuk diuji.'}), 400
+    if not COOKIE_PATH.exists():
+        return jsonify({'error': 'Belum ada cookies.txt. Upload sesi login dulu.'}), 400
+    pid = payload.get('product_id')
+    product = next((p for p in products if p['id'] == pid), products[0])
+    problem = node_ready()
+    if problem:
+        return jsonify({'error': problem}), 400
+    cmd = [shutil.which('node'), str(ROOT / 'browser_crawl.mjs'),
+           '--cookies', str(COOKIE_PATH), '--diagnose',
+           '{}.{}'.format(product['shopid'], product['itemid'])]
+    if payload.get('headful'):
+        cmd.append('--headful')
+    env = os.environ.copy()
+    env['PYTHONIOENCODING'] = 'utf-8'
+    try:
+        proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True,
+                              encoding='utf-8', errors='replace',
+                              timeout=180, env=env)
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Diagnosa melebihi 180 detik.'}), 504
+    except OSError as exc:
+        return jsonify({'error': 'Node.js tidak bisa dijalankan: {}'.format(exc)}), 500
+    output = ((proc.stdout or '') + (proc.stderr or '')).strip()
+    if not output:
+        return jsonify({'error': 'Diagnosa tidak menghasilkan output (kode {}).'.format(
+            proc.returncode)}), 500
+    return jsonify({'ok': proc.returncode == 0, 'output': output})
+
+
 @app.post('/api/crawl')
 def api_crawl():
     payload = request.get_json(silent=True) or {}
