@@ -42,6 +42,7 @@ PROGRESS_OPEN = re.compile(r'\[(\d+)\] membuka halaman')
 PROGRESS_COUNT = re.compile(r'\[(\d+)\]\s+(\d+)/(\d+) rating')
 PROGRESS_WARN = re.compile(r'\[(\d+)\] peringatan:\s*(.+)')
 PROGRESS_BLOCK = re.compile(r'\[(\d+)\] DIBLOKIR\s*(.*)')
+PROGRESS_VERIFY = re.compile(r'\[(\d+)\] (?:VERIFIKASI|menunggu verifikasi)')
 IMPORT_LINE = re.compile(r'^\s+(\d+)\s+.*:\s+(\d+) baris')
 
 
@@ -84,7 +85,11 @@ def read_cookie_lines(path=COOKIE_PATH):
     out = []
     for line in path.read_text(encoding='utf-8', errors='ignore').splitlines():
         line = line.strip()
-        if not line or line.startswith('#'):
+        # Chrome menandai cookie HttpOnly (SPC_U/SPC_SI) dengan awalan ini;
+        # jangan dibuang, kalau tidak sesi login tidak terdeteksi.
+        if line.startswith('#HttpOnly_'):
+            line = line[len('#HttpOnly_'):]
+        elif not line or line.startswith('#'):
             continue
         parts = line.split('\t')
         if len(parts) >= 7:
@@ -209,6 +214,8 @@ def _parse_line(job, line):
             'itemid': itemid, 'done': 0, 'total': None, 'state': 'berjalan'})
         item['done'] = done
         item['total'] = total
+        item['state'] = 'berjalan'
+        item['message'] = ''
         return
     m = PROGRESS_BLOCK.search(line)
     if m:
@@ -216,6 +223,13 @@ def _parse_line(job, line):
             'itemid': m.group(1), 'done': 0, 'total': None, 'state': 'berjalan'})
         item['state'] = 'diblokir'
         item['message'] = (m.group(2) or 'diblokir').strip()
+        return
+    m = PROGRESS_VERIFY.search(line)
+    if m:
+        item = job['products'].setdefault(m.group(1), {
+            'itemid': m.group(1), 'done': 0, 'total': None, 'state': 'berjalan'})
+        item['state'] = 'verifikasi'
+        item['message'] = 'selesaikan verifikasi di jendela browser'
         return
     m = PROGRESS_WARN.search(line)
     if m:
@@ -322,13 +336,16 @@ def _zero_rows_message(job):
                   (re.search(r'selesai (\d+) rating', ln) for ln in job['log']) if m)
     if '90309999' in joined:
         return ('Tidak ada ulasan yang tersimpan. Shopee menolak sesi ini '
-                '(error 90309999).\nBuka shopee.co.id di browser, selesaikan '
-                'verifikasi/captcha bila muncul, lalu ekspor cookies.txt baru dan '
-                'upload ulang. Kalau baru saja crawling banyak, tunggu beberapa jam.')
+                '(error 90309999).\nCentang "Tampilkan browser saat crawling" lalu '
+                'ulangi — kalau muncul verifikasi, selesaikan di jendela browser. '
+                'Kalau tetap gagal, ekspor ulang cookies.txt dari Chrome yang '
+                'benar-benar login, atau ganti jaringan dan tunggu beberapa jam.')
     if 'verify/traffic' in joined:
-        return ('Tidak ada ulasan yang tersimpan. Halaman produk dialihkan ke '
-                'verify/traffic — IP/akun kena verifikasi. Ganti jaringan atau '
-                'tunggu beberapa jam, lalu coba lagi.')
+        return ('Tidak ada ulasan yang tersimpan. Shopee menampilkan verifikasi '
+                '(verify/traffic).\nCentang "Tampilkan browser saat crawling", lalu '
+                'selesaikan verifikasi di jendela yang terbuka (maks 3 menit). '
+                'Kalau verifikasi ditolak, matikan VPN/proxy, ganti jaringan '
+                '(mis. hotspot HP), atau tunggu beberapa jam.')
     if fetched:
         return ('Rating berhasil diambil ({}), tetapi semuanya tanpa teks sehingga '
                 'CSV kosong. Naikkan jumlah review atau coba produk lain.'.format(fetched))

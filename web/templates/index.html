@@ -200,7 +200,7 @@
           <input type="checkbox" id="headful" style="width:16px;height:16px;accent-color:var(--brand)" {{ 'checked' if headful }}>
           Tampilkan browser saat crawling
         </label>
-        <div class="hint">Aktifkan kalau Shopee menolak dengan “error 90309999”. Browser akan terbuka dan bekerja sendiri.</div>
+        <div class="hint">Aktifkan kalau Shopee menolak dengan “error 90309999” atau menampilkan verifikasi. Jika verifikasi muncul, selesaikan di jendela yang terbuka (maks 3 menit).</div>
       </div>
 
       <div class="sep"></div>
@@ -497,7 +497,9 @@ async function pollJob() {
       ? 'Selesai — ' + nf.format(j.rows) + ' baris'
       : j.status === 'gagal'
         ? 'Gagal'
-        : 'Mengambil ulasan… ' + finished + '/' + j.total_products + ' produk';
+        : j.products.some((p) => p.state === 'verifikasi')
+          ? 'Menunggu verifikasi di jendela browser…'
+          : 'Mengambil ulasan… ' + finished + '/' + j.total_products + ' produk';
     $('#jobLog').textContent = j.log.join('\n');
     $('#jobLog').scrollTop = $('#jobLog').scrollHeight;
     $('#jobItems').innerHTML = j.products.map((p) => {
@@ -505,7 +507,9 @@ async function pollJob() {
       const pct = target ? Math.min(100, Math.round(p.done * 100 / target)) : 0;
       const label = p.state === 'diblokir'
         ? 'diblokir'
-        : (target ? nf.format(p.done) + ' / ' + nf.format(target) + (pct >= 100 ? ' ✓' : '') : '…');
+        : p.state === 'verifikasi'
+          ? 'verifikasi…'
+          : (target ? nf.format(p.done) + ' / ' + nf.format(target) + (pct >= 100 ? ' ✓' : '') : '…');
       return `<div class="item">
         <span class="t">item ${p.itemid}</span>
         <span class="s">${label}</span>

@@ -290,6 +290,76 @@ async function diagnose() {
   }
 }
 
+async function loadProduct(page, shopid, itemid) {
+  const st = { pdp: null, pageRatingsOk: false, pageRatingsError: null,
+    patched: false, gotoError: null };
+  const onResponse = async (r) => {
+    const u = r.url();
+    if (u.includes('pdp/get_pc')) {
+      try { st.pdp = await r.json(); } catch { /* abaikan */ }
+    } else if (u.includes('/get_ratings')) {
+      try {
+        const j = await r.json();
+        if (j && j.error) st.pageRatingsError = j.error;
+        else st.pageRatingsOk = true;
+      } catch { /* abaikan */ }
+    }
+  };
+  page.on('response', onResponse);
+  try {
+    await page.goto(`https://shopee.co.id/product/${shopid}/${itemid}`,
+      { waitUntil: 'domcontentloaded' });
+  } catch (e) {
+    st.gotoError = e;
+    page.off('response', onResponse);
+    return st;
+  }
+  // Tunggu sampai SDK Shopee menambal window.fetch (penanda: fetch bukan
+  // lagi "[native code]") dan/atau halaman selesai memuat data produk.
+  const start = Date.now();
+  while (Date.now() - start < 30000) {
+    if (st.pdp || st.pageRatingsOk || st.pageRatingsError) break;
+    if (!st.patched) {
+      try {
+        st.patched = await page.evaluate(() => {
+          try { return !window.fetch.toString().includes('[native code]'); } catch { return false; }
+        });
+      } catch { st.patched = false; }
+    }
+    if (st.patched && Date.now() - start > 8000) break;
+    await sleep(500);
+  }
+  page.off('response', onResponse);
+  return st;
+}
+
+async function waitForVerification(page, timeoutMs, itemid) {
+  const start = Date.now();
+  let told = false;
+  while (Date.now() - start < timeoutMs) {
+    await sleep(1500);
+    let url = '';
+    try { url = page.url(); } catch { return 'closed'; }
+    if (!url.includes('/verify/traffic')) return 'ok';
+    if (!told) {
+      process.stderr.write(`[${itemid}] menunggu verifikasi diselesaikan di jendela browser...\n`);
+      told = true;
+    }
+    let text = '';
+    try {
+      text = await page.evaluate(() =>
+        ((document.body && document.body.innerText) || '').slice(0, 5000));
+    } catch { /* halaman sedang berpindah */ }
+    if (/verifikasi gagal|verification failed|coba lagi nanti|try again later/i.test(text)) {
+      return 'failed';
+    }
+    if (/verifikasi berhasil|verification successful|verification complete/i.test(text)) {
+      return 'ok';
+    }
+  }
+  return 'timeout';
+}
+
 async function main() {
   if (CHECK_ONLY) {
     console.log('Node.js         : ' + process.version);
@@ -339,54 +409,39 @@ async function main() {
     const started = Date.now();
     process.stderr.write(`[${itemid}] membuka halaman...\n`);
 
-    let pdp = null;
-    let pageRatingsOk = false;
-    let pageRatingsError = null;
-    const onResponse = async (r) => {
-      const u = r.url();
-      if (u.includes('pdp/get_pc')) {
-        try { pdp = await r.json(); } catch { /* abaikan */ }
-      } else if (u.includes('/get_ratings')) {
-        try {
-          const j = await r.json();
-          if (j && j.error) pageRatingsError = j.error;
-          else pageRatingsOk = true;
-        } catch { /* abaikan */ }
-      }
-    };
-    page.on('response', onResponse);
-    try {
-      await page.goto(`https://shopee.co.id/product/${shopid}/${itemid}`, { waitUntil: 'domcontentloaded' });
-    } catch (e) {
-      page.off('response', onResponse);
-      process.stderr.write(`[${itemid}] gagal membuka halaman: ${e?.message || e}\n`);
-      results.push({ shopid, itemid, error: 'goto: ' + (e?.message || e), reviews: [] });
+    let st = await loadProduct(page, shopid, itemid);
+    if (st.gotoError) {
+      process.stderr.write(`[${itemid}] gagal membuka halaman: ${st.gotoError?.message || st.gotoError}\n`);
+      results.push({ shopid, itemid, error: 'goto: ' + (st.gotoError?.message || st.gotoError), reviews: [] });
       continue;
     }
-
-    // Tunggu sampai SDK Shopee menambal window.fetch (penanda: fetch bukan
-    // lagi "[native code]") dan/atau halaman selesai memuat data produk.
-    const readyStart = Date.now();
-    let patched = false;
-    while (Date.now() - readyStart < 30000) {
-      if (pdp || pageRatingsOk || pageRatingsError) break;
-      if (!patched) {
-        try {
-          patched = await page.evaluate(() => {
-            try { return !window.fetch.toString().includes('[native code]'); } catch { return false; }
-          });
-        } catch { patched = false; }
-      }
-      if (patched && Date.now() - readyStart > 8000) break;
-      await sleep(500);
-    }
-    page.off('response', onResponse);
 
     if (page.url().includes('/verify/traffic')) {
-      process.stderr.write(`[${itemid}] DIBLOKIR verify/traffic\n`);
-      results.push({ shopid, itemid, error: 'verify/traffic', reviews: [] });
-      continue;
+      if (!HEADFUL) {
+        process.stderr.write(`[${itemid}] DIBLOKIR verify/traffic (verifikasi Shopee; pakai mode tampil agar bisa diselesaikan manual)\n`);
+        results.push({ shopid, itemid, error: 'verify/traffic', reviews: [] });
+        continue;
+      }
+      process.stderr.write(`[${itemid}] VERIFIKASI Shopee muncul — selesaikan di jendela browser (maks 3 menit)...\n`);
+      const status = await waitForVerification(page, 180000, itemid);
+      if (status !== 'ok') {
+        const why = status === 'failed' ? 'verifikasi ditolak Shopee'
+          : status === 'closed' ? 'jendela browser ditutup'
+          : 'verifikasi tidak selesai';
+        process.stderr.write(`[${itemid}] DIBLOKIR verify/traffic (${why})\n`);
+        results.push({ shopid, itemid, error: 'verify/traffic: ' + why, reviews: [] });
+        continue;
+      }
+      process.stderr.write(`[${itemid}] verifikasi selesai, memuat ulang produk...\n`);
+      st = await loadProduct(page, shopid, itemid);
+      if (st.gotoError || page.url().includes('/verify/traffic')) {
+        process.stderr.write(`[${itemid}] DIBLOKIR verify/traffic (masih setelah verifikasi)\n`);
+        results.push({ shopid, itemid, error: 'verify/traffic', reviews: [] });
+        continue;
+      }
     }
+
+    const { pdp, pageRatingsOk, pageRatingsError, patched } = st;
     if (pageRatingsError && !pdp && !patched) {
       process.stderr.write(`[${itemid}] DIBLOKIR halaman produk ditolak (error ${pageRatingsError})\n`);
       results.push({ shopid, itemid, error: String(pageRatingsError), reviews: [] });

@@ -262,6 +262,18 @@ dibedakan:
 | `Selisih jam: > 120 detik` | jam Windows tidak akurat sehingga tanda tangan ditolak | aktifkan **Set time automatically**, restart, ulangi |
 | Akun & jam benar, `IP publik` beda dari Ubuntu, tetap `90309999`/verify | IP/VPN/proxy Windows berbeda dan sedang dicurigai Shopee | matikan VPN/proxy, coba hotspot lain, atau tunggu beberapa jam |
 
+### Kalau muncul verifikasi Shopee
+
+- **Mode tampil** (centang **Tampilkan browser saat crawling**): jendela Firefox
+  terbuka dan crawler menunggu maksimal 3 menit. Selesaikan verifikasi di
+  jendela itu; setelah selesai crawler memuat ulang produk dan lanjut sendiri.
+- **Mode tersembunyi**: verifikasi tidak bisa diselesaikan, jadi crawler
+  berhenti dengan pesan yang menyarankan mode tampil.
+- Kalau halaman verifikasi langsung menulis **“verifikasi gagal / coba lagi
+  nanti”**, itu blokir dari Shopee (bukan captcha yang bisa diisi): matikan
+  VPN/proxy, ganti jaringan (mis. hotspot HP), atau tunggu beberapa jam. Cek
+  dulu apakah Chrome di Windows bisa membuka Shopee tanpa verifikasi.
+
 ## Output
 
 CSV (UTF-8) dengan kolom:
@@ -290,7 +302,7 @@ Semua folder `web/data/` dan `outputs/` masuk `.gitignore`.
 | `Sesi belum aktif` atau `error 90309999` | cookie kedaluwarsa / bukan akun login / SDK halaman belum siap | ekspor ulang `cookies.txt` dari browser yang sudah login, upload lagi; kalau baru crawling banyak, tunggu beberapa jam |
 | `error 90309999` padahal cookie baru | Shopee menolak mode headless | centang **Tampilkan browser saat crawling** di Pengaturan, lalu ulangi; atau `set HEADFUL=1` sebelum `run_web.bat` |
 | `error 90309999` hanya di Windows | bisa cookie bukan sesi login, jam meleset, atau VPN/proxy | klik **Cek sesi ke Shopee**; bandingkan akun, IP publik, dan selisih jam dengan Ubuntu |
-| Halaman produk dialihkan ke `/verify/traffic/error` | IP diblokir sementara | tunggu beberapa jam, ganti jaringan, pastikan cookie login valid |
+| Halaman produk dialihkan ke `/verify/traffic` | verifikasi/bot-check Shopee | centang **Tampilkan browser saat crawling** lalu selesaikan verifikasi di jendela (maks 3 menit); kalau “verifikasi gagal”, ganti jaringan/tunggu |
 | `Node.js belum terpasang` | Node tidak ada di PATH | install Node.js LTS, buka terminal/CMD baru |
 | `Dependensi Node belum ada` | `npm install` belum dijalankan | `npm install` di folder proyek |
 | `Browser Firefox untuk Playwright belum terpasang` | browser belum diunduh / versinya tidak cocok | `node node_modules/playwright-core/cli.js install firefox` |
