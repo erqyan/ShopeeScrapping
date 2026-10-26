@@ -17,9 +17,9 @@ if [ ! -d node_modules/playwright-core ]; then
   echo "Memasang dependensi Node (playwright-core) ..."
   npm install
 fi
-if ! node -e "require('playwright-core').firefox.executablePath()" >/dev/null 2>&1; then
+if ! node -e "const fs=require('fs');process.exit(fs.existsSync(require('playwright-core').firefox.executablePath())?0:1)" >/dev/null 2>&1; then
   echo "Mengunduh Firefox untuk Playwright ..."
-  npx playwright install firefox
+  node node_modules/playwright-core/cli.js install firefox
 fi
 
 PORT="${PORT:-5000}"

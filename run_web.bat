@@ -43,10 +43,10 @@ if not exist "node_modules\playwright-core" (
   )
 )
 
-node -e "require('playwright-core').firefox.executablePath()" >nul 2>nul
+node -e "const fs=require('fs');process.exit(fs.existsSync(require('playwright-core').firefox.executablePath())?0:1)" >nul 2>nul
 if errorlevel 1 (
   echo [4/4] Mengunduh Firefox untuk Playwright ^(sekali saja, sekitar 90 MB^) ...
-  call npx playwright install firefox
+  node "node_modules\playwright-core\cli.js" install firefox
   if errorlevel 1 (
     echo [X] Gagal mengunduh Firefox Playwright.
     pause

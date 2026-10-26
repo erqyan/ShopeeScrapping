@@ -222,14 +222,19 @@ def node_ready():
     try:
         probe = subprocess.run(
             [node, '-e',
-             "const{firefox}=require('playwright-core');firefox.executablePath()"],
+             "const fs=require('fs');"
+             "const p=require('playwright-core').firefox.executablePath();"
+             "if(!fs.existsSync(p)){console.error(p);process.exit(3)}"],
             cwd=str(ROOT), capture_output=True, text=True,
             encoding='utf-8', errors='replace')
     except OSError as e:
         return 'Node.js tidak bisa dijalankan: {}'.format(e)
+    if probe.returncode == 3:
+        return ('Firefox untuk Playwright belum terpasang. Jalankan di folder '
+                'proyek: node node_modules/playwright-core/cli.js install firefox')
     if probe.returncode != 0:
-        return ('Browser Firefox untuk Playwright belum terpasang. '
-                'Jalankan: npx playwright install firefox')
+        return ('Playwright bermasalah: {}'.format(
+            (probe.stderr or probe.stdout or '').strip()[:300] or 'tidak diketahui'))
     return None
 
 
@@ -253,7 +258,10 @@ def _run_job(job_id, products, max_reviews, min_comment_len):
             job['log'].append(line)
             _parse_line(job, line)
         if process.wait() != 0:
-            raise RuntimeError('crawler berhenti dengan kode {}'.format(process.returncode))
+            tail = [ln.strip() for ln in job['log'][-12:] if ln.strip()]
+            detail = '\n'.join(tail[-6:])
+            raise RuntimeError('crawler berhenti dengan kode {}{}'.format(
+                process.returncode, ('\n' + detail) if detail else ''))
         if not raw_path.exists():
             raise RuntimeError('hasil crawl tidak ditemukan')
 

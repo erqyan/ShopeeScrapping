@@ -72,6 +72,15 @@ lain). Ganti port dengan `PORT=8080 ./run_web.sh` (Windows:
 
 ## Migrasi ke Windows
 
+> **Browser harian Anda bebas** — Chrome, Edge, Firefox, apa pun. Crawler ini
+> memakai **Firefox bawaan Playwright** (diunduh terpisah oleh launcher), bukan
+> browser yang Anda pakai. Chrome hanya dipakai untuk mengekspor `cookies.txt`
+> dari akun Shopee yang sudah login.
+>
+> Karena itu **jangan** memakai `npx playwright install firefox` (bisa memasang
+> versi Firefox yang tidak cocok); gunakan perintah yang membaca versi
+> `playwright-core` di proyek: `node node_modules/playwright-core/cli.js install firefox`.
+
 Prasyarat (sekali saja):
 
 | Perangkat | Versi | Catatan |
@@ -96,7 +105,7 @@ Buka **http://127.0.0.1:5000**. Kalau ingin manual:
 py -3 -m venv --system-site-packages .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 npm install
-npx playwright install firefox
+node node_modules/playwright-core/cli.js install firefox
 .venv\Scripts\python.exe -m web.app
 ```
 
@@ -118,6 +127,8 @@ Catatan Windows:
   errornya terlihat.
 - Node/Playwright dicek otomatis sebelum crawl; kalau belum siap, UI menampilkan
   perintah yang perlu dijalankan.
+- `cek_sistem.bat` menampilkan versi Python/Node, status Firefox Playwright, dan
+  jumlah cookie. Jalankan ini kalau ada error — hasilnya memudahkan diagnosa.
 
 ## Dependensi
 
@@ -214,7 +225,7 @@ halaman produk. Untuk kasus itu pakai jalur browser:
 
 ```bash
 npm install                    # sekali saja
-npx playwright install firefox # sekali saja
+node node_modules/playwright-core/cli.js install firefox # sekali saja
 
 node browser_crawl.mjs --cookies cookies.txt --out raw.json --max 500 \
   "https://shopee.co.id/Nama-Produk-i.809769142.22853217492"
@@ -256,7 +267,8 @@ Semua folder `web/data/` dan `outputs/` masuk `.gitignore`.
 | Halaman produk dialihkan ke `/verify/traffic/error` | IP diblokir sementara | tunggu beberapa jam, ganti jaringan, pastikan cookie login valid |
 | `Node.js belum terpasang` | Node tidak ada di PATH | install Node.js LTS, buka terminal/CMD baru |
 | `Dependensi Node belum ada` | `npm install` belum dijalankan | `npm install` di folder proyek |
-| `Browser Firefox untuk Playwright belum terpasang` | browser belum diunduh | `npx playwright install firefox` |
+| `Browser Firefox untuk Playwright belum terpasang` | browser belum diunduh / versinya tidak cocok | `node node_modules/playwright-core/cli.js install firefox` |
+| `crawler berhenti dengan kode 1` | Firefox Playwright hilang/versi tidak cocok | jalankan `node node_modules/playwright-core/cli.js install firefox`, lalu ulangi; detail error ada di **Lihat log** |
 | CSV 0 baris | semua rating tanpa komentar | `--min-comment-len 0` dan/atau `--max-reviews` lebih besar, atau `--keep-empty` |
 | Port 5000 sudah dipakai | aplikasi lain | Windows: `set PORT=8080` lalu `run_web.bat`; Linux: `PORT=8080 ./run_web.sh` |
 | Emoji / huruf Mandarin rusak di Excel | Excel tidak mendeteksi UTF-8 | buka lewat **Data → From Text/CSV** lalu pilih encoding UTF-8, atau impor via Power Query |
