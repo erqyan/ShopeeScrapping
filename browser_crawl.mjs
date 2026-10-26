@@ -158,9 +158,18 @@ async function main() {
     process.stderr.write(`[${itemid}] membuka halaman...\n`);
 
     let pdp = null;
+    let pageRatingsOk = false;
+    let pageRatingsError = null;
     const onResponse = async (r) => {
-      if (r.url().includes('pdp/get_pc')) {
+      const u = r.url();
+      if (u.includes('pdp/get_pc')) {
         try { pdp = await r.json(); } catch { /* abaikan */ }
+      } else if (u.includes('/get_ratings')) {
+        try {
+          const j = await r.json();
+          if (j && j.error) pageRatingsError = j.error;
+          else pageRatingsOk = true;
+        } catch { /* abaikan */ }
       }
     };
     page.on('response', onResponse);
@@ -172,12 +181,38 @@ async function main() {
       results.push({ shopid, itemid, error: 'goto: ' + (e?.message || e), reviews: [] });
       continue;
     }
-    await page.waitForTimeout(6000);
+
+    // Tunggu sampai SDK Shopee menambal window.fetch (penanda: fetch bukan
+    // lagi "[native code]") dan/atau halaman selesai memuat data produk.
+    const readyStart = Date.now();
+    let patched = false;
+    while (Date.now() - readyStart < 30000) {
+      if (pdp || pageRatingsOk || pageRatingsError) break;
+      if (!patched) {
+        try {
+          patched = await page.evaluate(() => {
+            try { return !window.fetch.toString().includes('[native code]'); } catch { return false; }
+          });
+        } catch { patched = false; }
+      }
+      if (patched && Date.now() - readyStart > 8000) break;
+      await sleep(500);
+    }
     page.off('response', onResponse);
 
     if (page.url().includes('/verify/traffic')) {
       process.stderr.write(`[${itemid}] DIBLOKIR verify/traffic\n`);
       results.push({ shopid, itemid, error: 'verify/traffic', reviews: [] });
+      continue;
+    }
+    if (pageRatingsError && !pdp && !patched) {
+      process.stderr.write(`[${itemid}] DIBLOKIR halaman produk ditolak (error ${pageRatingsError})\n`);
+      results.push({ shopid, itemid, error: String(pageRatingsError), reviews: [] });
+      continue;
+    }
+    if (!pdp && !patched && !pageRatingsOk) {
+      process.stderr.write(`[${itemid}] DIBLOKIR halaman tidak selesai dimuat\n`);
+      results.push({ shopid, itemid, error: 'halaman tidak selesai dimuat', reviews: [] });
       continue;
     }
 
@@ -187,6 +222,7 @@ async function main() {
     let total = null;
     let hasMore = true;
     let error = null;
+    let retry = 0;
 
     while (reviews.length < MAX_REVIEWS && hasMore) {
       const batch = await page.evaluate(async ({ itemid, shopid, offset, limit }) => {
@@ -204,6 +240,12 @@ async function main() {
       }, { itemid, shopid, offset, limit });
 
       if (batch.http || batch.error) {
+        if (batch.error === 90309999 && reviews.length === 0 && retry < 6) {
+          retry += 1;
+          process.stderr.write(`[${itemid}] menunggu tanda tangan halaman... (${retry}/6)\n`);
+          await sleep(2000);
+          continue;
+        }
         error = batch.http ? 'HTTP ' + batch.http : 'error ' + batch.error;
         break;
       }

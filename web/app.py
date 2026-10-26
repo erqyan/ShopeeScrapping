@@ -40,6 +40,8 @@ LOCK = threading.Lock()
 
 PROGRESS_OPEN = re.compile(r'\[(\d+)\] membuka halaman')
 PROGRESS_COUNT = re.compile(r'\[(\d+)\]\s+(\d+)/(\d+) rating')
+PROGRESS_WARN = re.compile(r'\[(\d+)\] peringatan:\s*(.+)')
+PROGRESS_BLOCK = re.compile(r'\[(\d+)\] DIBLOKIR\s*(.*)')
 IMPORT_LINE = re.compile(r'^\s+(\d+)\s+.*:\s+(\d+) baris')
 
 
@@ -47,7 +49,8 @@ IMPORT_LINE = re.compile(r'^\s+(\d+)\s+.*:\s+(\d+) baris')
 # penyimpanan state
 # --------------------------------------------------------------------------- #
 def default_state():
-    return {'products': [], 'settings': {'max_reviews': 500, 'min_comment_len': 0}}
+    return {'products': [], 'settings': {
+        'max_reviews': 500, 'min_comment_len': 0, 'headful': False}}
 
 
 def load_state():
@@ -58,7 +61,10 @@ def load_state():
     except (json.JSONDecodeError, OSError):
         return default_state()
     state.setdefault('products', [])
-    state.setdefault('settings', {'max_reviews': 500, 'min_comment_len': 0})
+    settings = state.setdefault('settings', {})
+    settings.setdefault('max_reviews', 500)
+    settings.setdefault('min_comment_len', 0)
+    settings.setdefault('headful', False)
     return state
 
 
@@ -204,11 +210,20 @@ def _parse_line(job, line):
         item['done'] = done
         item['total'] = total
         return
-    if 'DIBLOKIR' in line and job.get('current'):
-        item = job['products'].setdefault(job['current'], {
-            'itemid': job['current'], 'done': 0, 'total': None, 'state': 'berjalan'})
+    m = PROGRESS_BLOCK.search(line)
+    if m:
+        item = job['products'].setdefault(m.group(1), {
+            'itemid': m.group(1), 'done': 0, 'total': None, 'state': 'berjalan'})
         item['state'] = 'diblokir'
-        job['current'] = None
+        item['message'] = (m.group(2) or 'diblokir').strip()
+        return
+    m = PROGRESS_WARN.search(line)
+    if m:
+        item = job['products'].setdefault(m.group(1), {
+            'itemid': m.group(1), 'done': 0, 'total': None, 'state': 'berjalan'})
+        item['message'] = m.group(2).strip()
+        if 'error' in item['message'].lower():
+            item['state'] = 'diblokir'
 
 
 def node_ready():
@@ -238,7 +253,7 @@ def node_ready():
     return None
 
 
-def _run_job(job_id, products, max_reviews, min_comment_len):
+def _run_job(job_id, products, max_reviews, min_comment_len, headful=False):
     job = JOBS[job_id]
     raw_path = OUTPUT_DIR / '{}_raw.json'.format(job_id)
     csv_path = OUTPUT_DIR / '{}_reviews.csv'.format(job_id)
@@ -247,6 +262,8 @@ def _run_job(job_id, products, max_reviews, min_comment_len):
     cmd = [node, str(ROOT / 'browser_crawl.mjs'),
            '--cookies', str(COOKIE_PATH), '--out', str(raw_path),
            '--max', str(max_reviews), *urls]
+    if headful or os.environ.get('HEADFUL'):
+        cmd.append('--headful')
     job['cmd'] = ' '.join(cmd)
     try:
         process = subprocess.Popen(
@@ -281,6 +298,8 @@ def _run_job(job_id, products, max_reviews, min_comment_len):
 
         job['rows'] = _count_rows(csv_path)
         job['csv'] = str(csv_path)
+        if job['rows'] == 0:
+            raise RuntimeError(_zero_rows_message(job))
         job['status'] = 'selesai'
     except FileNotFoundError:
         job['status'] = 'gagal'
@@ -294,6 +313,29 @@ def _run_job(job_id, products, max_reviews, min_comment_len):
     finally:
         job['finished'] = time.time()
         _prune_raw(keep=10)
+
+
+def _zero_rows_message(job):
+    msgs = [p.get('message') for p in job['products'].values() if p.get('message')]
+    joined = ' '.join(m for m in msgs if m)
+    fetched = sum(int(m.group(1)) for m in
+                  (re.search(r'selesai (\d+) rating', ln) for ln in job['log']) if m)
+    if '90309999' in joined:
+        return ('Tidak ada ulasan yang tersimpan. Shopee menolak sesi ini '
+                '(error 90309999).\nBuka shopee.co.id di browser, selesaikan '
+                'verifikasi/captcha bila muncul, lalu ekspor cookies.txt baru dan '
+                'upload ulang. Kalau baru saja crawling banyak, tunggu beberapa jam.')
+    if 'verify/traffic' in joined:
+        return ('Tidak ada ulasan yang tersimpan. Halaman produk dialihkan ke '
+                'verify/traffic — IP/akun kena verifikasi. Ganti jaringan atau '
+                'tunggu beberapa jam, lalu coba lagi.')
+    if fetched:
+        return ('Rating berhasil diambil ({}), tetapi semuanya tanpa teks sehingga '
+                'CSV kosong. Naikkan jumlah review atau coba produk lain.'.format(fetched))
+    if joined:
+        return 'Tidak ada ulasan yang tersimpan. Penyebab: ' + joined
+    return ('Tidak ada ulasan yang tersimpan. Periksa sesi login (Lihat log) dan '
+            'pastikan produk memiliki rating.')
 
 
 def _prune_raw(keep=10):
@@ -327,7 +369,8 @@ def index():
     return render_template('index.html', state=state,
                            session=session_info(),
                            max_reviews=state['settings']['max_reviews'],
-                           min_comment_len=state['settings']['min_comment_len'])
+                           min_comment_len=state['settings']['min_comment_len'],
+                           headful=state['settings'].get('headful', False))
 
 
 @app.get('/api/products')
@@ -372,6 +415,7 @@ def api_settings():
         state['settings']['min_comment_len'] = max(0, int(payload.get('min_comment_len', 0)))
     except (TypeError, ValueError):
         state['settings']['min_comment_len'] = 0
+    state['settings']['headful'] = bool(payload.get('headful', state['settings']['headful']))
     save_state(state)
     return jsonify({'settings': state['settings']})
 
@@ -421,6 +465,7 @@ def api_crawl():
         min_len = max(0, int(payload.get('min_comment_len', 0)))
     except (TypeError, ValueError):
         min_len = 0
+    headful = bool(payload.get('headful', state['settings'].get('headful', False)))
 
     job_id = uuid.uuid4().hex[:12]
     with LOCK:
@@ -433,7 +478,7 @@ def api_crawl():
             for old in sorted(JOBS, key=lambda k: JOBS[k]['created'])[:-MAX_JOBS]:
                 JOBS.pop(old, None)
     threading.Thread(target=_run_job, daemon=True,
-                     args=(job_id, products, max_reviews, min_len)).start()
+                     args=(job_id, products, max_reviews, min_len, headful)).start()
     return jsonify({'job_id': job_id})
 
 

@@ -195,6 +195,14 @@
         <div class="hint">0 = semua komentar. Rating tanpa komentar selalu dilewati.</div>
       </div>
 
+      <div style="margin-top:14px">
+        <label style="display:flex;gap:9px;align-items:center;font-weight:500;margin:0">
+          <input type="checkbox" id="headful" style="width:16px;height:16px;accent-color:var(--brand)" {{ 'checked' if headful }}>
+          Tampilkan browser saat crawling
+        </label>
+        <div class="hint">Aktifkan kalau Shopee menolak dengan “error 90309999”. Browser akan terbuka dan bekerja sendiri.</div>
+      </div>
+
       <div class="sep"></div>
 
       <label>Sesi login Shopee</label>
@@ -387,22 +395,25 @@ function settingsPayload() {
   return {
     max_reviews: Number($('#maxReviews').value) || 500,
     min_comment_len: Number($('#minLen').value) || 0,
+    headful: $('#headful').checked,
   };
 }
 
 let saveTimer;
+function saveSettings(delay) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    api('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settingsPayload()),
+    }).catch(() => {});
+  }, delay);
+}
 ['#maxReviews', '#minLen'].forEach((sel) => {
-  $(sel).addEventListener('input', () => {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      api('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settingsPayload()),
-      }).catch(() => {});
-    }, 500);
-  });
+  $(sel).addEventListener('input', () => saveSettings(500));
 });
+$('#headful').addEventListener('change', () => saveSettings(0));
 
 /* ---------------- job ---------------- */
 let currentJob = null;

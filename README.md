@@ -235,8 +235,14 @@ python -m crawler.importer raw.json reviews.csv
 
 `browser_crawl.mjs` membuka halaman produk di Firefox (Playwright), menyuntikkan
 cookie login, lalu memanggil `get_ratings` dari konteks halaman sehingga request
-ikut ditandatangani. `--max` membatasi jumlah rating per produk; naikkan untuk
-mengambil lebih banyak. `--headful` menampilkan jendela browser.
+ikut ditandatangani. Skrip menunggu sampai SDK Shopee benar-benar aktif (sampai
+30 detik) dan mengulang request pertama bila masih ditolak, jadi koneksi lambat
+tidak langsung menghasilkan `error 90309999`. `--max` membatasi jumlah rating per
+produk; naikkan untuk mengambil lebih banyak. `--headful` menampilkan jendela
+browser (atau centang **Tampilkan browser saat crawling** di web UI).
+
+Kalau semua produk tetap ditolak, job di web UI berstatus **Gagal** dengan
+petunjuk — bukan "selesai 0 baris" — supaya penyebabnya jelas.
 
 ## Output
 
@@ -263,13 +269,14 @@ Semua folder `web/data/` dan `outputs/` masuk `.gitignore`.
 
 | Gejala | Penyebab | Solusi |
 | --- | --- | --- |
-| `Sesi belum aktif` atau `error 90309999` | cookie kedaluwarsa / bukan akun login | ekspor ulang `cookies.txt` dari browser yang sudah login, upload lagi |
+| `Sesi belum aktif` atau `error 90309999` | cookie kedaluwarsa / bukan akun login / SDK halaman belum siap | ekspor ulang `cookies.txt` dari browser yang sudah login, upload lagi; kalau baru crawling banyak, tunggu beberapa jam |
+| `error 90309999` padahal cookie baru | Shopee menolak mode headless | centang **Tampilkan browser saat crawling** di Pengaturan, lalu ulangi; atau `set HEADFUL=1` sebelum `run_web.bat` |
 | Halaman produk dialihkan ke `/verify/traffic/error` | IP diblokir sementara | tunggu beberapa jam, ganti jaringan, pastikan cookie login valid |
 | `Node.js belum terpasang` | Node tidak ada di PATH | install Node.js LTS, buka terminal/CMD baru |
 | `Dependensi Node belum ada` | `npm install` belum dijalankan | `npm install` di folder proyek |
 | `Browser Firefox untuk Playwright belum terpasang` | browser belum diunduh / versinya tidak cocok | `node node_modules/playwright-core/cli.js install firefox` |
 | `crawler berhenti dengan kode 1` | Firefox Playwright hilang/versi tidak cocok | jalankan `node node_modules/playwright-core/cli.js install firefox`, lalu ulangi; detail error ada di **Lihat log** |
-| CSV 0 baris | semua rating tanpa komentar | `--min-comment-len 0` dan/atau `--max-reviews` lebih besar, atau `--keep-empty` |
+| CSV 0 baris | semua rating tanpa komentar | `--min-comment-len 0` dan/atau `--max-reviews` lebih besar, atau `--keep-empty`; web UI menampilkan alasannya saat job **Gagal** |
 | Port 5000 sudah dipakai | aplikasi lain | Windows: `set PORT=8080` lalu `run_web.bat`; Linux: `PORT=8080 ./run_web.sh` |
 | Emoji / huruf Mandarin rusak di Excel | Excel tidak mendeteksi UTF-8 | buka lewat **Data → From Text/CSV** lalu pilih encoding UTF-8, atau impor via Power Query |
 | `run_web.bat` langsung menutup | error tidak terlihat | jalankan dari Command Prompt, bukan klik dua kali |
