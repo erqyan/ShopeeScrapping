@@ -43,9 +43,12 @@ run_web.bat
 ```
 
 Kalau sering kena verifikasi/`90309999`, jalankan `run_chrome_debug.bat`
-lebih dulu. Tutup semua Chrome, biarkan skrip membuka Chrome asli dengan
-port debug, login ke Shopee di jendela itu, lalu jalankan `run_web.bat`.
-Crawler akan otomatis memakai Chrome tersebut lewat CDP.
+lebih dulu. Chrome 136+ tidak mengizinkan port debug pada profil utama,
+jadi skrip memakai profil khusus `%LOCALAPPDATA%\ShopeeCrawlerChrome`.
+Chrome utama boleh tetap terbuka. Login ke Shopee sekali di jendela
+profil crawler, lalu jalankan `run_web.bat`. Crawler akan otomatis
+memakai Chrome tersebut lewat CDP; sesi login tersimpan untuk crawl
+berikutnya.
 
 **Linux / macOS:**
 
@@ -292,10 +295,14 @@ dibedakan:
 
 ### Kalau muncul verifikasi Shopee
 
-- **Otomatis (Windows)**: kalau crawl mode tersembunyi kena verifikasi, browser
-  dibuka otomatis dan crawl diulang dengan mode tampil. Selesaikan verifikasi
-  di jendela itu; setelah berhasil crawler memuat ulang produk dan lanjut
-  sendiri.
+- **Chrome asli via CDP (paling disarankan di Windows)**: jalankan
+  `run_chrome_debug.bat`, login ke Shopee sekali di profil crawler yang
+  terbuka, lalu jalankan `run_web.bat`. Crawler otomatis memakai Chrome
+  itu, termasuk saat menyelesaikan verifikasi manual.
+- **Otomatis (Windows)**: kalau crawl mode tersembunyi kena verifikasi,
+  browser Firefox dibuka otomatis dan crawl diulang dengan mode tampil.
+  Selesaikan verifikasi di jendela itu; setelah berhasil crawler memuat
+  ulang produk dan lanjut sendiri.
 - **Manual**: centang **Tampilkan browser saat crawling**. Jendela Firefox
   terbuka dan crawler menunggu maksimal 10 menit.
 - Kalau halaman menulis **“Verifikasi gagal”**, klik **Coba Lagi** di jendela
