@@ -267,6 +267,22 @@ def node_ready():
     return None
 
 
+def _can_show_browser():
+    """True kalau mesin ini punya layar untuk membuka browser manual."""
+    if os.name == 'nt':
+        return True
+    return bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+
+
+def _needs_headful(job):
+    """True kalau crawl berhenti total karena blokir verifikasi/anti-bot."""
+    text = '\n'.join(job['log'][-60:]).lower()
+    if '[semua]' not in text:
+        return False
+    return ('verif' in text or 'captcha' in text or 'verify' in text
+            or '90309999' in text)
+
+
 def _run_job(job_id, products, max_reviews, min_comment_len, headful=False):
     job = JOBS[job_id]
     raw_path = OUTPUT_DIR / '{}_raw.json'.format(job_id)
@@ -280,19 +296,40 @@ def _run_job(job_id, products, max_reviews, min_comment_len, headful=False):
         cmd.append('--headful')
     job['cmd'] = ' '.join(cmd)
     try:
-        process = subprocess.Popen(
-            cmd, cwd=str(ROOT), stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1,
-            encoding='utf-8', errors='replace')
-        for line in process.stdout:
-            line = line.rstrip('\n')
-            job['log'].append(line)
-            _parse_line(job, line)
-        if process.wait() != 0:
-            tail = [ln.strip() for ln in job['log'][-12:] if ln.strip()]
-            detail = '\n'.join(tail[-6:])
-            raise RuntimeError('crawler berhenti dengan kode {}{}'.format(
-                process.returncode, ('\n' + detail) if detail else ''))
+        def stream_cmd(run_cmd):
+            job['cmd'] = ' '.join(run_cmd)
+            process = subprocess.Popen(
+                run_cmd, cwd=str(ROOT), stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, bufsize=1,
+                encoding='utf-8', errors='replace')
+            for line in process.stdout:
+                line = line.rstrip('\n')
+                job['log'].append(line)
+                _parse_line(job, line)
+            if process.wait() != 0:
+                tail = [ln.strip() for ln in job['log'][-12:] if ln.strip()]
+                detail = '\n'.join(tail[-6:])
+                raise RuntimeError('crawler berhenti dengan kode {}{}'.format(
+                    process.returncode, ('\n' + detail) if detail else ''))
+
+        stream_cmd(list(cmd))
+
+        # Kalau mode tersembunyi kena verifikasi, buka browser otomatis supaya
+        # user bisa menyelesaikannya manual, lalu lanjutkan crawl yang sama.
+        if (not (headful or os.environ.get('HEADFUL'))
+                and _needs_headful(job) and _can_show_browser()):
+            job['log'].append('Verifikasi Shopee terdeteksi — membuka browser '
+                              'untuk verifikasi manual...')
+            job['headful_retry'] = True
+            for p in job['products'].values():
+                p['state'] = 'berjalan'
+                p['message'] = ''
+            try:
+                raw_path.unlink()
+            except OSError:
+                pass
+            stream_cmd(list(cmd) + ['--headful'])
+
         if not raw_path.exists():
             raise RuntimeError('hasil crawl tidak ditemukan')
 
@@ -334,17 +371,27 @@ def _zero_rows_message(job):
     joined = ' '.join(m for m in msgs if m)
     fetched = sum(int(m.group(1)) for m in
                   (re.search(r'selesai (\d+) rating', ln) for ln in job['log']) if m)
+    if 'captcha' in joined:
+        return ('Tidak ada ulasan yang tersimpan. Shopee menolak membuat captcha '
+                '(anti-fraud, error 90309999).\nIni pembatasan sesi/akun atau IP, '
+                'bukan masalah cookie — login biasanya masih valid.\n'
+                'Coba: ganti jaringan (tethering hotspot HP atau restart router/ONT), '
+                'tunggu beberapa jam, atau pakai akun Shopee lain. '
+                'Cek dulu lewat tombol "Cek sesi ke Shopee".')
     if '90309999' in joined:
-        return ('Tidak ada ulasan yang tersimpan. Shopee menolak sesi ini '
-                '(error 90309999).\nCentang "Tampilkan browser saat crawling" lalu '
-                'ulangi — kalau muncul verifikasi, selesaikan di jendela browser. '
-                'Kalau tetap gagal, ekspor ulang cookies.txt dari Chrome yang '
-                'benar-benar login, atau ganti jaringan dan tunggu beberapa jam.')
-    if 'verify/traffic' in joined:
+        return ('Tidak ada ulasan yang tersimpan. Shopee menolak permintaan ulasan '
+                '(error 90309999: anti-fraud).\n'
+                'Kalau muncul verifikasi, selesaikan di jendela browser (maks 10 menit; '
+                'di Windows browser dibuka otomatis).\n'
+                'Kalau tidak ada verifikasi: (1) ganti jaringan — hotspot HP / restart '
+                'router, (2) tunggu beberapa jam. Cookie/login biasanya masih valid; '
+                'cek lewat "Cek sesi ke Shopee".')
+    if 'verify/traffic' in joined or 'verifikasi' in joined:
         return ('Tidak ada ulasan yang tersimpan. Shopee menampilkan verifikasi '
-                '(verify/traffic).\nCentang "Tampilkan browser saat crawling", lalu '
-                'selesaikan verifikasi di jendela yang terbuka (maks 3 menit). '
-                'Kalau verifikasi ditolak, matikan VPN/proxy, ganti jaringan '
+                '(verify/traffic).\nBrowser seharusnya sudah terbuka otomatis; '
+                'selesaikan verifikasi di jendela itu (maks 10 menit). '
+                'Kalau muncul "Verifikasi gagal", klik "Coba Lagi" lalu selesaikan. '
+                'Kalau tetap tidak bisa, matikan VPN/proxy, ganti jaringan '
                 '(mis. hotspot HP), atau tunggu beberapa jam.')
     if fetched:
         return ('Rating berhasil diambil ({}), tetapi semuanya tanpa teks sehingga '
@@ -527,6 +574,7 @@ def api_crawl():
             'id': job_id, 'status': 'berjalan', 'log': [], 'products': {},
             'current': None, 'rows': 0, 'error': None, 'created': time.time(),
             'total_products': len(products), 'max_reviews': max_reviews,
+            'headful_retry': False,
         }
         if len(JOBS) > MAX_JOBS:
             for old in sorted(JOBS, key=lambda k: JOBS[k]['created'])[:-MAX_JOBS]:
