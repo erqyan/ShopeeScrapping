@@ -27,6 +27,7 @@ shopee-reviews-crawler/
 ├── outputs/                  # hasil crawl (tidak di-commit)
 ├── run_web.sh                # launcher Linux / macOS
 ├── run_web.bat               # launcher Windows
+├── run_chrome_debug.bat      # Windows: buka Chrome asli untuk mode CDP
 ├── requirements.txt          # dependensi Python inti
 ├── requirements-optional.txt # pandas (opsional)
 ├── package.json              # dependensi Node: playwright-core
@@ -40,6 +41,11 @@ shopee-reviews-crawler/
 ```bat
 run_web.bat
 ```
+
+Kalau sering kena verifikasi/`90309999`, jalankan `run_chrome_debug.bat`
+lebih dulu. Tutup semua Chrome, biarkan skrip membuka Chrome asli dengan
+port debug, login ke Shopee di jendela itu, lalu jalankan `run_web.bat`.
+Crawler akan otomatis memakai Chrome tersebut lewat CDP.
 
 **Linux / macOS:**
 
