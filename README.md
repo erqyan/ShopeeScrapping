@@ -47,6 +47,28 @@ run_web.bat
 ./run_web.sh
 ```
 
+**Ubuntu — prasyarat sekali saja:**
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git curl
+node -v    # butuh Node.js 18+; kalau masih lama, pasang Node 20:
+# curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# sudo apt install -y nodejs
+```
+
+Kalau Ubuntu diakses lewat SSH (tanpa desktop), buka UI dari komputer lain
+dengan tunnel:
+
+```bash
+ssh -L 5000:127.0.0.1:5000 user@server-ubuntu
+# lalu buka http://127.0.0.1:5000 di browser lokal
+```
+
+Crawler tetap berjalan di Ubuntu (Firefox headless), jadi verifikasi Shopee
+yang bisa diisi manual tidak tersedia lewat SSH — gunakan Ubuntu desktop atau
+selesaikan verifikasi di browser biasa lalu ekspor ulang cookie.
+
 Lalu buka **http://127.0.0.1:5000**. Launcher otomatis membuat `.venv`,
 memasang `requirements.txt`, menjalankan `npm install`, dan mengunduh Firefox
 Playwright kalau belum ada.
