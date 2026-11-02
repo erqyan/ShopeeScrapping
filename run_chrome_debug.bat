@@ -7,7 +7,7 @@ set "PROFILE=%LOCALAPPDATA%\ShopeeCrawlerChrome"
 
 if not defined LOCALAPPDATA (
   echo Folder LOCALAPPDATA tidak ditemukan. Jalankan script ini dari
-  echo Command Prompt biasa (bukan sebagai service / SYSTEM).
+  echo Command Prompt biasa, bukan sebagai service / SYSTEM.
   pause
   exit /b 1
 )
